@@ -1,74 +1,82 @@
 //@flow
 import React from "react";
-import { Shaders, Node, GLSL } from "gl-react";
+import { Uniform, Shaders, Node, GLSL, NearestCopy } from "gl-react";
 import { Surface } from "gl-react-dom";
+import timeLoop from './timeLoop.jsx'
+import png from './foo.png'
+import svg from './logo.svg'
 
+const adv = GLSL`precision highp float;
+      uniform float deltaT;
+      uniform sampler2D t;
+      varying vec2 uv;
+
+      void main() {
+        vec2 u = texture2D(t, uv).xy;
+
+        vec2 pastCoord = fract(uv - (deltaT * u));
+        gl_FragColor = texture2D(t, pastCoord);
+      }
+`
+
+const advInit = GLSL`precision highp float;
+      uniform sampler2D inputTexture;
+      varying vec2 uv;
+
+      void main() {
+        gl_FragColor = texture2D(inputTexture, uv);
+      }
+`
 const shaders = Shaders.create({
-  gradients: { frag: GLSL`
-precision highp float;
-varying vec2 uv;
-uniform vec4 colors[3];
-uniform vec2 particles[3];
-void main () {
-  vec4 sum = vec4(0.0);
-  for (int i=0; i<3; i++) {
-    vec4 c = colors[i];
-    vec2 p = particles[i];
-    float d = c.a * smoothstep(0.6, 0.2, distance(p, uv));
-    sum += d * vec4(c.a * c.rgb, c.a);
-  }
-  if (sum.a > 1.0) {
-    sum.rgb /= sum.a;
-    sum.a = 1.0;
-  }
-  gl_FragColor = vec4(sum.a * sum.rgb, 1.0);
-}`}
+  adv: {
+      frag: adv,
+      // vert: NSVertShader,
+  },
+  init: {
+      frag: advInit,
+      // vert: NSVertShader,
+  },
 });
 
 // Alternative syntax using React stateless function component
-const Gradients = ({ time }) =>
-  <Node
-    shader={shaders.gradients}
-    uniforms={{
-      colors: [
-        [ Math.cos(0.002*time), Math.sin(0.002*time), 0.2, 1 ],
-        [ Math.sin(0.002*time), -Math.cos(0.002*time), 0.1, 1 ],
-        [ 0.3, Math.sin(3+0.002*time), Math.cos(1+0.003*time), 1 ]
-      ],
-      particles: [
-        [ 0.3, 0.3 ],
-        [ 0.7, 0.5 ],
-        [ 0.4, 0.9 ]
-      ]
-    }}
-  />;
+const WIDTH = 400
 
-const timeLoop = (Comp) => class A extends React.Component {
-    constructor(props) {
-        super(props)
-        this.state = {
-            time: 0,
-        }
+const createTexture = () => {
+  const canvas = document.querySelector(`canvas`)
+  const gl = canvas.getContext("webgl");
 
-        this.increaseTime = this.increaseTime.bind(this)
-    }
+  const tex = gl.createTexture(400, 400)
 
-    componentDidMount() {
-        this.increaseTime()
-    }
-
-    increaseTime() {
-        this.setState({ time: this.state.time + 5 })
-
-        requestAnimationFrame(this.increaseTime)
-    }
-
-    render() {
-        return <Comp {...this.props} time={ this.state.time } />
-    }
-
-
+  return tex
 }
+
+
+const Gradients = ({ time, initialized }) => {
+    return (
+    <NearestCopy>
+        { time < 0.5 ?
+            <Node
+                shader={shaders.init}
+                backbuffering
+                sync
+                uniforms={{
+                    inputTexture: png, //glCreateTexture(WIDTH, WIDTH),
+                }}
+            />
+            :
+            <Node
+                shader={shaders.adv}
+                backbuffering
+                sync
+                uniforms={{
+                    deltaT: 0.005,
+                    t: Uniform.Backbuffer,
+                }}
+            />
+        }
+    </NearestCopy>
+)}
+
 
 const GradientsLoop = timeLoop(Gradients);
 
