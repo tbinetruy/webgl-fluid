@@ -8,24 +8,43 @@ import svg from './logo.svg'
 
 const adv = GLSL`precision highp float;
       uniform float deltaT;
-      uniform sampler2D t;
+      uniform sampler2D velocity;
+      uniform float rho;            // Density \n\
+      uniform float epsilon;        // Distance between grid units \n\
       varying vec2 uv;
 
-      void main() {
-        vec2 u = texture2D(t, uv).xy;
 
-        vec2 pastCoord = fract(uv - (deltaT * u));
-        gl_FragColor = texture2D(t, pastCoord);
+      vec2 u(vec2 coord) {
+        return texture2D(velocity, fract(coord)).xy;
+      }
+
+      void main() {
+        vec2 textureCoord = uv;
+        vec2 u_adv = texture2D(velocity, fract(uv)).xy;
+
+        vec2 pastCoord = fract(uv - (0.5 * deltaT * u(textureCoord)));
+        u_adv = u(pastCoord);
+
+        vec4 pressure = vec4((-2.0 * epsilon * rho / deltaT) * (
+          (u(textureCoord + vec2(epsilon, 0)).x -
+           u(textureCoord - vec2(epsilon, 0)).x)
+          +
+          (u(textureCoord + vec2(0, epsilon)).y -
+           u(textureCoord - vec2(0, epsilon)).y)
+        ), 0.0, 0.0, 1.0);
       }
 `
 
 const advInit = GLSL`precision highp float;
       uniform sampler2D inputTexture;
       varying vec2 uv;
-
-      void main() {
-        gl_FragColor = texture2D(inputTexture, uv);
-      }
+    float random (vec2 uv) {
+    return fract(sin(dot(uv, vec2(12.9898,78.233))) * 43758.5453);
+    }
+    // i
+    void main() {
+    gl_FragColor = vec4(vec3(step(0.5, random(uv))), 1.0);
+    }
 `
 const shaders = Shaders.create({
   adv: {
@@ -51,29 +70,22 @@ const createTexture = () => {
 }
 
 
-const Gradients = ({ time, initialized }) => {
+const Gradients = ({ time }) => {
+    const isInit = time > 0.5
+
     return (
     <NearestCopy>
-        { time < 0.5 ?
             <Node
-                shader={shaders.init}
+                shader={ isInit ? shaders.adv : shaders.init }
                 backbuffering
                 sync
                 uniforms={{
-                    inputTexture: png, //glCreateTexture(WIDTH, WIDTH),
+                    deltaT: 0.001,
+                    velocity: isInit ? Uniform.Backbuffer : png,
+                    epsilon: 1/WIDTH,
+                    rho: 0.5,
                 }}
             />
-            :
-            <Node
-                shader={shaders.adv}
-                backbuffering
-                sync
-                uniforms={{
-                    deltaT: 0.005,
-                    t: Uniform.Backbuffer,
-                }}
-            />
-        }
     </NearestCopy>
 )}
 
